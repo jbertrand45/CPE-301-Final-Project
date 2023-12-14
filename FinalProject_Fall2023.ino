@@ -17,9 +17,14 @@
 #define DISABLED 3
 #define ERROR 4
 
+const int currState;
+
 LiquidCrystal lcd(13, 12, 11, 3, 2, 4);
 
 RTC_DS1307 rtc;
+unsigned long int initialMill;
+unsigned int currMill;
+unsigned int count;
 
 const int totalSteps = 1024
 Stepper stepperMotor(totalSteps, 8, 9, 10, 11);
@@ -50,22 +55,37 @@ void setup() {
 }
 
 void loop() {
-  int currState;
 
   currState = getState();
 
   if(currState == RUNNING){
     LEDon(RUNNING);
+    printTemp();
+    printHumidity();
+    printStateChange();
+    currState = getState();
   }
   else if(currState == IDLE){
     LEDon(IDLE);
+    printTemp();
+    printHumidity();
+    printStateChange();
+    currState = getState();
   }
   else if(currState == DISABLED){
     LEDon(DISABLED);
+    printStateChange();
+    currState = getState();
   }
   else if(currState == ERROR){
     LEDon(ERROR);
+    printTemp();
+    printHumidity();
+    printStateChange();
+    currState = getState();
   }
+
+  delay(1000);
 }
 
 void U0init(int U0baud){
