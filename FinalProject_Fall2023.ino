@@ -30,8 +30,6 @@ LiquidCrystal lcd(13, 12, 11, 3, 2, 4);
 
 // Real-Time Clock
 RTC_DS1307 rtc;
-unsigned long int initialMill;
-unsigned int currMill;
 unsigned int count;
 
 // Stepper Motor
@@ -122,7 +120,7 @@ void loop() {
   if(currState == RUNNING){
     LEDoff();
     LEDon(RUNNING);
-    printStats();
+    LCDMinuteTimer();
     printStateChange(RUNNING);
     runFanMotor();
     if(ambientTemp < 20){
@@ -141,7 +139,7 @@ void loop() {
   else if(currState == IDLE){
     LEDoff();
     LEDon(IDLE);
-    printStats();
+    LCDMinuteTimer();
     printStateChange(IDLE);
     if(waterVoltage < 1){
       currState = ERROR;
@@ -170,7 +168,7 @@ void loop() {
   else if(currState == ERROR){
     LEDoff();
     LEDon(ERROR);
-    printStats();
+    LCDMinuteTimer();
     printStateChange(ERROR);
     LCDdispError();
     if(restartButton){
@@ -360,6 +358,20 @@ void LCDdispError(){
 
   delay(5000);
   lcd.clear();
+}
+
+void LCDMinuteTimer(){
+  if(count > 6000){
+    printStats();
+    startCount();
+  }
+  else{
+    return;
+  }
+}
+
+void startCount(){
+  count = millis();
 }
 
 float getTemp(){
