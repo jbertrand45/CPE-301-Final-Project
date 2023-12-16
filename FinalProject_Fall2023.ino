@@ -4,6 +4,7 @@
 * Tristan Hughes, Joey Bertrand, Carlos Hernandez
 ****************************/
 
+// Libraries
 #include <Stepper.h>
 #include <LiquidCrystal.h>
 #include "DHT.h"
@@ -42,10 +43,10 @@ float ambientTemp;
 float waterVoltage;
 
 // Fan & Water Sensor Ports
-volatile unsigned int* port_e = (unsigned int*) 0x2E;
-volatile unsigned int* ddr_e = (unsigned int*) 0x2D;
+volatile unsigned int* port_j = (unsigned int*) 0x105;
+volatile unsigned int* ddr_j = (unsigned int*) 0x104;
 
-volatile unsigned int* port_H = (unsigned int*) 0x102;
+volatile unsigned int* port_h = (unsigned int*) 0x102;
 volatile unsigned int* ddr_h = (unsigned int*) 0x101;
 
 // LED ports
@@ -80,15 +81,15 @@ void setup() {
 
   // Initialize DHT
   dht.begin();
-  *ddr_h &= 0b00100000;
+  *ddr_h &= 0b00100111;
 
   // Initialize LEDS
   *ddr_a |= 0b01000000;
-  *ddr_c |= 0b10101000;
+  *ddr_c |= 0b10101010;
   LEDoff();
 
   // Initialze Fan & Water Sensor
-  *ddr_e |= 0b00000011;
+  *ddr_j |= 0b00000011;
 
   // Initialize Stepper
   stepperMotor.setSpeed(5);
@@ -105,14 +106,19 @@ void setup() {
 }
 
 void loop() {
+  // The printStateChange() functions within the if-else loops are commented out
+  // because they spam random characters into the serial monitor, potentially crashing the program.
+  //
+  // Returns the statuses of the buttons
+  startButton = getStartButton();
+  stopButton = getStopButton();
+  restartButton = getRestartButton();
 
-  //startButton = getStartButton();
-  //stopButton = getStopButton();
-  //restartButton = getRestartButton();
-
+  // Returns temperature and water level
   ambientTemp = getTemp();
-  //waterVoltage = getWaterVoltage();
+  waterVoltage = getWaterVoltage();
 
+  // Running State
   if(currState == RUNNING){
     LEDoff();
     LEDon(RUNNING);
@@ -122,23 +128,27 @@ void loop() {
     runFanMotor();
     if(ambientTemp < 20){
       currState = IDLE;
+      stopMotor();
     }
     else if(waterVoltage < 0.75){
       currState = ERROR;
+      stopMotor();
     }
     else if(stopButton){
       currState = DISABLED;
+      stopMotor();
     }
     else{
       currState = RUNNING;
     }
   }
+  // Idle State
   else if(currState == IDLE){
     LEDoff();
     LEDon(IDLE);
     LCDMinuteTimer();
     //printStateChange(IDLE);
-    if(waterVoltage < 1){
+    if(waterVoltage < 0.75){
       currState = ERROR;
     }
     else if(ambientTemp > 20){
@@ -151,6 +161,7 @@ void loop() {
       currState = IDLE;
     }
   }
+  // Disabled State
   else if(currState == DISABLED){
     LEDoff();
     LEDon(DISABLED);
@@ -162,6 +173,7 @@ void loop() {
       currState = DISABLED;
     }
   }
+  // Error State
   else if(currState == ERROR){
     LEDoff();
     LEDon(ERROR);
@@ -171,18 +183,22 @@ void loop() {
     changeVentPosition(ERROR);
     if(restartButton){
       currState = IDLE;
+      stopMotor();
     }
     else if(stopButton){
       currState = DISABLED;
+      stopMotor();
     }
     else{
       currState = ERROR;
+      waterVoltage = getWaterVoltage();
     }
   }
 
   delay(1000);
 }
 
+// UART Functions
 void U0init(int U0baud){
   unsigned long FCPU = 16000000;
   unsigned int tbaud;
@@ -198,6 +214,7 @@ void U0putchar(unsigned char U0pdata){
   *myUDR0 = U0pdata;
 }
 
+// ADC functions
 void adc_init() {
 
   *my_ADCSRA |= 0b10000000; 
@@ -232,9 +249,10 @@ unsigned int adc_read(unsigned char adc_channel_num){
   return *my_ADC_DATA;
 }
 
+// LED Functions
 void LEDon(int LEDnum){
   if(LEDnum == 1){
-    *port_c |= 0b00100000;
+    *port_c |= 0b00100010;
   }
   else if(LEDnum == 2){
     *port_a |= 0b01000000;
@@ -249,9 +267,10 @@ void LEDon(int LEDnum){
 
 void LEDoff(){
   *port_a &= 0b10111111;
-  *port_c &= 0b01010111;
+  *port_c &= 0b01010101;
 }
 
+// Gets humidity and temperature readings and displays on LCD
 void printStats(){
   float humidity;
   float temperature;
@@ -269,6 +288,7 @@ void printStats(){
   LCDPrintStats(temperature, humidity);
 }
 
+// Prints current date and time in serial monitor
 void printTime(){
   DateTime present = rtc.now();
   String presentTime = present.timestamp(DateTime::TIMESTAMP_TIME);
@@ -283,6 +303,7 @@ void printTime(){
   stringHelper("\n");
 }
 
+// Prints state change in serial monitor
 void printStateChange(int stateNum){
   stringHelper("State Changed \n");
   stringHelper("System now in: ");
@@ -304,6 +325,7 @@ void printStateChange(int stateNum){
   printTime();
 }
 
+// Prints strings to serial monitor
 void stringHelper(char* userString){  
   char* printString = userString;
   for(int i = 0; printString[i] != '\0'; i++){
@@ -311,26 +333,47 @@ void stringHelper(char* userString){
   }
 }
 
+// Fan Functions
 void runFanMotor(){
-  *port_e |= 0b00000010;
+  *port_j |= 0b00000010;
 }
 
 void stopFanMotor(){
-  *port_e &= 0b11111101;
+  *port_j &= ~(0b11111101);
 }
 
-/*bool getStartButton(){
-
+// Button Functions
+bool getStartButton(){
+ *port_h &= (0b00000100);
+ if(PINH & (1 << 2)){
+  return true;
+ }
+ else{
+  return false;
+ }
 }
 
 bool getStopButton(){
-
+  *port_h &= (0b00000001);
+  if(PINH & (1 << 0)){
+    return true;
+  }
+  else{
+    return false;
+  }
 }
 
 bool getRestartButton(){
+  *port_h &= (0b00000010);
+  if(PINH & (1 << 1)){
+    return true;
+  }
+  else{
+    return false;
+  }
+}
 
-}*/
-
+// LCD functions
 void LCDPrintStats(float systemTemp, float systemHumid){
   lcd.clear();
 
@@ -370,10 +413,12 @@ void LCDMinuteTimer(){
   }
 }
 
+// Timer function
 void startCount(){
   count = millis();
 }
 
+// DHT and Voltage functions
 float getTemp(){
   float temp = dht.readTemperature();
 
@@ -384,18 +429,19 @@ float getWaterVoltage(){
   float adcValue;
   float waterVal;
 
-  *port_e |= 0b00000001;
+  *port_j |= 0b00000001;
+
+  adcValue = adc_read(1);
   delay(1000);
 
-  adcValue = adc_read(0);
-
-  *port_e &= 0b11111110;
+  *port_j &= ~(0b11111110);
 
   waterVal = adcValue * (5 / 1023.0);
 
   return waterVal;
 }
 
+// Motor Functions
 void changeVentPosition(int currentState){
   if(currentState == 1){
     stepperMotor.step(2048);
@@ -403,4 +449,8 @@ void changeVentPosition(int currentState){
   else{
     stepperMotor.step(2048);
   }
+}
+
+void stopMotor(){
+  stepperMotor.step(0);
 }
