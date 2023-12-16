@@ -41,6 +41,10 @@ DHT dht(8, DHT11);
 float ambientTemp;
 float waterVoltage;
 
+// Fan & Water Sensor Ports
+volatile unsigned int* port_e = (unsigned int*) 0x2E;
+volatile unsigned int* ddr_e = (unsigned int*) 0x2D;
+
 volatile unsigned int* port_H = (unsigned int*) 0x102;
 volatile unsigned int* ddr_h = (unsigned int*) 0x101;
 
@@ -51,11 +55,7 @@ volatile unsigned char* port_c = (unsigned char*) 0x28;
 volatile unsigned char* ddr_a = (unsigned char*) 0x21;
 volatile unsigned char* ddr_c = (unsigned char*) 0x27;
 
-// Fan Motor
-volatile unsigned char* port_g = (unsigned char*) 0x34;
-volatile unsigned char* ddr_g = (unsigned char*) 0x33;
-
-// Water Sensor Ports
+// ADC addresses
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
 volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2; 
@@ -66,9 +66,6 @@ volatile unsigned char *my_ADMUX    = (unsigned char*) 0x7C;
 volatile unsigned char *my_ADCSRB   = (unsigned char*) 0x7B; 
 volatile unsigned char *my_ADCSRA   = (unsigned char*) 0x7A; 
 volatile unsigned int  *my_ADC_DATA = (unsigned int*)  0x78;
-
-volatile unsigned char* port_b = (unsigned char*) 0x25; 
-volatile unsigned char* ddr_b  = (unsigned char*) 0x24; 
 
 void setup() {
   
@@ -90,11 +87,8 @@ void setup() {
   *ddr_c |= 0b10101000;
   LEDoff();
 
-  // Initialize Water Sensor
-  *ddr_b |= 0b00000100;
-
-  // Initialize Fan Motor
-  *ddr_g |= 0b00000001;
+  // Initialze Fan & Water Sensor
+  *ddr_e |= 0b00000011;
 
   // Initialize Stepper
   stepperMotor.setSpeed(5);
@@ -102,10 +96,12 @@ void setup() {
 
   // Initialize RTC
   rtc.begin();
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  DateTime presentTime = DateTime(2023, 12, 15, 0, 0, 0);
+  rtc.adjust(presentTime);
 
   // Set default state
   currState = IDLE;
+  startCount();
 }
 
 void loop() {
@@ -115,18 +111,19 @@ void loop() {
   //restartButton = getRestartButton();
 
   ambientTemp = getTemp();
-  waterVoltage = getWaterVoltage();
+  //waterVoltage = getWaterVoltage();
 
   if(currState == RUNNING){
     LEDoff();
     LEDon(RUNNING);
     LCDMinuteTimer();
-    printStateChange(RUNNING);
+    //printStateChange(RUNNING);
+    changeVentPosition(RUNNING);
     runFanMotor();
     if(ambientTemp < 20){
       currState = IDLE;
     }
-    else if(waterVoltage < 1){
+    else if(waterVoltage < 0.75){
       currState = ERROR;
     }
     else if(stopButton){
@@ -140,7 +137,7 @@ void loop() {
     LEDoff();
     LEDon(IDLE);
     LCDMinuteTimer();
-    printStateChange(IDLE);
+    //printStateChange(IDLE);
     if(waterVoltage < 1){
       currState = ERROR;
     }
@@ -157,7 +154,7 @@ void loop() {
   else if(currState == DISABLED){
     LEDoff();
     LEDon(DISABLED);
-    printStateChange(DISABLED);
+    //printStateChange(DISABLED);
     if(startButton){
       currState = RUNNING;
     }
@@ -169,8 +166,9 @@ void loop() {
     LEDoff();
     LEDon(ERROR);
     LCDMinuteTimer();
-    printStateChange(ERROR);
+    //printStateChange(ERROR);
     LCDdispError();
+    changeVentPosition(ERROR);
     if(restartButton){
       currState = IDLE;
     }
@@ -307,17 +305,18 @@ void printStateChange(int stateNum){
 }
 
 void stringHelper(char* userString){  
-  for(int i = 0; userString[i] != '\0'; i++){
-    U0putchar(userString[i]);
+  char* printString = userString;
+  for(int i = 0; printString[i] != '\0'; i++){
+    U0putchar(printString[i]);
   }
 }
 
 void runFanMotor(){
-  *port_g |= 0b00000001;
+  *port_e |= 0b00000010;
 }
 
 void stopFanMotor(){
-  *port_g &= 0b11111110;
+  *port_e &= 0b11111101;
 }
 
 /*bool getStartButton(){
@@ -366,6 +365,7 @@ void LCDMinuteTimer(){
     startCount();
   }
   else{
+    printStats();
     return;
   }
 }
@@ -384,14 +384,23 @@ float getWaterVoltage(){
   float adcValue;
   float waterVal;
 
-  *port_b |= 0b00000100;
+  *port_e |= 0b00000001;
   delay(1000);
 
-  adcValue = adc_read(6);
+  adcValue = adc_read(0);
 
-  *port_b &= 0b11111011;
+  *port_e &= 0b11111110;
 
   waterVal = adcValue * (5 / 1023.0);
 
   return waterVal;
+}
+
+void changeVentPosition(int currentState){
+  if(currentState == 1){
+    stepperMotor.step(2048);
+  }
+  else{
+    stepperMotor.step(2048);
+  }
 }
